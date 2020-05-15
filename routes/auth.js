@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const CONFIG = require('../config.js');
 const User = require('../models/User');
+const Divisions = require('../models/Divisions');
 const router = require('express').Router();
 
 //================  TEMP  ==================
@@ -12,7 +13,7 @@ const router = require('express').Router();
 
 function serverTokenGenerate(payload, secret) {
     return jwt.sign(payload, secret, {
-        expiresIn: `${CONFIG.TOKEN_EXP}min`
+        expiresIn: `${CONFIG.TOKEN_EXP}min`,
     });
 }
 
@@ -24,98 +25,85 @@ async function userSearchOnLogin(userLogin) {
         console.log(e);
     }
 }
+
+async function serchUserOnId(id) {
+    try {
+        let temp = await User.findOne({ _id: id });
+        return temp ? temp : null;
+    } catch (e) {
+        console.log(e);
+    }
+}
 //================= Methods ================
 
+//================= Divisions ==============
+router.post('/getdivisions', async (req,res)=>{
+    let divisions = await Divisions.find()
+    res.json({data:divisions})
+})
+
 //================= register ===============
-// router.post('/register', async (req, res) => {
-//     let registerRequest = {
-//         login: req.body.login,
-//         password: bcrypt.hashSync(req.body.password, 10)
-//     };
-//     if (!req.body.login || req.body.password) {
-//         res.status(200).json({
-//             error: 'Bad user data'
-//         });
-//     }
+router.post('/register', async (req, res) => {
 
-//     const findUserFromBase = await userSearchOnLogin(req.body.login);
-//     if (findUserFromBase === null) {
-//         let token = serverTokenGenerate(req.body.login, CONFIG.SECRET);
-//         registerRequest.token = token;
-//         await User.create(registerRequest);
+    if (!req.body.login || req.body.password || req.body.division) {
+        res.status(200).json({
+            error: 'Bad user data'
+        });
+    }
+    let registerRequest = {
+        login: req.body.login,
+        password: bcrypt.hashSync(req.body.password, 10),
+        division: await Divisions.find({"location": req.body.division})._id
+     };
 
-//         res.status(201).json({ token });
-//         console.log('User created,Login-', registerRequest.login);
-//     } else {
-//         res.status(200).json({
-//             error: 'Login is used'
-//         });
-//         console.log(findUserFromBase.login + ' login is used');
-//     }
-// });
+    const findUserFromBase = await userSearchOnLogin(req.body.login);
+    if (findUserFromBase === null) {
+        let user = await User.create(registerRequest);
+        let token = serverTokenGenerate(user._id, CONFIG.SECRET);
+        await User.update({_id: user._id},{"$set":{token}});
+
+
+        res.status(201).json({ token });
+        console.log('User created,Login-', registerRequest.login);
+    } else {
+        res.status(200).json({
+            error: 'Login is used'
+        });
+        console.log(findUserFromBase.login + ' login is used');
+    }
+});
 //================= Register ===============
 
 //================= User Data fetch =================
 router.post('/user', async (req, res) => {
-    console.log(req.url);
-
-    if (req.body.token) {
+    if (req.headers.auth) {
         try {
-            jwt.verify(req.body.token, CONFIG.SECRET);
-            let tokenDecoded = jwt.decode(req.body.token);
-            let user = await userSearchOnLogin(tokenDecoded.login);
-            // console.log(user);
-
-            res.status(200).json({
-                user
-            });
+            jwt.verify(req.headers.auth.split(' ')[1], CONFIG.SECRET);
+            let tokenDecoded = jwt.decode(req.headers.auth.split(' ')[1]);
+            let user = await serchUserOnId(tokenDecoded._id);
+            res.status(200).json({ user });
         } catch (err) {
-            console.info(err);
             if (err.message !== 'jwt expired') {
                 res.status(200).json({
-                    error: 'Bad bad user'
+                    error: 'Bad bad user',
                 });
             } else {
                 res.status(200).json({ error: err.message });
             }
         }
+    } else {
+        res.status(401).json({ error: 'Bad user data' });
     }
 });
 
 //================= Login ==================
 router.post('/login', async (req, res) => {
-    let findUserFromBase = await userSearchOnLogin(req.body.login);
-    // console.log(findUserFromBase);
-
-    // let userData = {
-    //     _id: findUserFromBase._id,
-    //     login: findUserFromBase.login,
-    //     name: findUserFromBase.name,
-    //     tabNumber: findUserFromBase.tabNumber,
-    //     phoneInternal: findUserFromBase.phoneInternal,
-    //     division: findUserFromBase.division,
-    //     divisionLabel: findUserFromBase.divisionLabel,
-    //     permission: findUserFromBase.permission
-    // };
-
-    if (req.body.token) {
-        try {
-            jwt.verify(req.body.token, CONFIG.SECRET);
-            res.status(200).json({
-                token: findUserFromBase.token
-            });
-        } catch (err) {
-            // console.log(err);
-            res.status(200).json({
-                error: 'Bad bad user'
-            });
-        }
-    }
     if (!req.body.login || !req.body.password) {
         res.status(200).json({
-            error: 'Неверные данные'
+            error: 'Неверные данные',
         });
     } else {
+        let findUserFromBase = await userSearchOnLogin(req.body.login);
         if (findUserFromBase !== null) {
             if (
                 bcrypt.compareSync(req.body.password, findUserFromBase.password)
@@ -123,11 +111,11 @@ router.post('/login', async (req, res) => {
                 try {
                     jwt.verify(findUserFromBase.token, CONFIG.SECRET);
                     res.status(200).json({
-                        token: findUserFromBase.token
+                        token: findUserFromBase.token,
                     });
                 } catch (err) {
                     let token = serverTokenGenerate(
-                        { login: findUserFromBase.login },
+                        { _id: findUserFromBase._id },
                         CONFIG.SECRET
                     );
 
@@ -137,12 +125,12 @@ router.post('/login', async (req, res) => {
                 }
             } else {
                 res.status(200).json({
-                    error: 'Неверные данные'
+                    error: 'Неверные данные',
                 });
             }
         } else {
             res.status(200).json({
-                error: 'Пользователь не найден'
+                error: 'Пользователь не найден',
             });
         }
     }

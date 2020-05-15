@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
+const Divisions = require('./Divisions')
+
 const user = new Schema(
     {
         login: {
@@ -18,8 +20,10 @@ const user = new Schema(
         name: String,
         tabNumber: String,
         phoneInternal: Number,
-        division: String,
-        divisionLabel: String,
+        division: {
+            type: mongoose.Types.ObjectId,
+            ref: Divisions
+        },
         permission: {
             default: 0,
             type: Number,
