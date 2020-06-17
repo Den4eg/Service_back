@@ -112,10 +112,8 @@ router.post('/login', async (req, res) => {
             token: findUserFromBase.token,
           })
         } catch (err) {
-          if (err.message !== 'jwt expired') {
+          if (err.message === 'jwt expired') {
             let token = serverTokenGenerate({ _id: findUserFromBase._id }, CONFIG.SECRET)
-            console.log(token)
-
             User.updateOne({ login: req.body.login }, { $set: { token } }, () => {
               res.status(200).json({ token })
             })
